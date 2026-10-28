@@ -1,0 +1,9 @@
+{
+  "name": "BonyVisuals ADT Tracker",
+  "description": "Real-time attendance tracker and register for Regional Maritime University, Tema Plast, and Christ Apostolic Church International with QR scanning, facial verification, administrator backend console, device contacts access, and offline sync.",
+  "requestFramePermissions": [
+    "android.permission.CAMERA",
+    "android.permission.READ_CONTACTS"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

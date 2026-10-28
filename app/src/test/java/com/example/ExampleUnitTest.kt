@@ -1,0 +1,147 @@
+package com.example
+
+import com.example.data.AttendanceRepository
+import com.example.model.AttendanceStatus
+import com.example.model.DeviceContact
+import com.example.model.SyncState
+import com.example.model.UserRole
+import com.example.model.VerificationMethod
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.*
+import org.junit.Before
+import org.junit.Test
+
+class ExampleUnitTest {
+
+    private lateinit var repository: AttendanceRepository
+
+    @Before
+    fun setup() {
+        repository = AttendanceRepository()
+    }
+
+    @Test
+    fun testInitializationLoadsRegionalMaritimeUniversity() {
+        val org = repository.currentOrg.value
+        assertEquals("Regional Maritime University", org.name)
+        assertTrue(repository.members.value.isNotEmpty())
+        assertTrue(repository.sessions.value.isNotEmpty())
+        assertTrue(repository.schoolCourses.value.isNotEmpty())
+
+        val admin = repository.members.value.first()
+        assertEquals("Bony Visuals", admin.name)
+        assertEquals(UserRole.ADMIN, admin.role)
+    }
+
+    @Test
+    fun testOrganizationsListContainsRequiredInstitutions() {
+        val orgNames = repository.sampleOrganizations.map { it.name }
+        assertTrue(orgNames.contains("Regional Maritime University"))
+        assertTrue(orgNames.contains("Tema Plast"))
+        assertTrue(orgNames.contains("Christ Apostolic Church International"))
+    }
+
+    @Test
+    fun testQrCheckInMarksPresent() {
+        val session = repository.sessions.value.first()
+        val member = repository.members.value.first()
+
+        val record = repository.markByQrToken(member.qrCodeToken, session)
+        assertNotNull(record)
+        assertEquals(member.id, record?.memberId)
+        assertEquals(AttendanceStatus.PRESENT, record?.status)
+        assertEquals(VerificationMethod.QR_SCAN, record?.method)
+        assertEquals(SyncState.SYNCED, record?.syncState)
+        assertTrue(record?.hashProof?.isNotEmpty() == true)
+    }
+
+    @Test
+    fun testOfflineModeQueuesRecordsAndSyncFlushes() = runBlocking {
+        repository.toggleOfflineMode()
+        assertTrue(repository.isOfflineMode.value)
+
+        val session = repository.sessions.value.first()
+        val member = repository.members.value.last()
+
+        val record = repository.markAttendance(
+            member = member,
+            session = session,
+            status = AttendanceStatus.PRESENT,
+            method = VerificationMethod.QR_SCAN
+        )
+
+        assertEquals(SyncState.PENDING_SYNC, record.syncState)
+        val pendingCount = repository.records.value.count { it.syncState == SyncState.PENDING_SYNC }
+        assertTrue(pendingCount >= 1)
+
+        val syncedCount = repository.syncPendingRecords()
+        assertTrue(syncedCount >= 1)
+        val remainingPending = repository.records.value.count { it.syncState == SyncState.PENDING_SYNC }
+        assertEquals(0, remainingPending)
+    }
+
+    @Test
+    fun testMemberDeletion() {
+        val member = repository.addNewMember("Test Cadet", "test.cadet@rmu.edu.gh", "Nautical Level 100", UserRole.STUDENT)
+        assertTrue(repository.members.value.any { it.id == member.id })
+
+        val deleted = repository.deleteMember(member.id)
+        assertTrue(deleted)
+        assertFalse(repository.members.value.any { it.id == member.id })
+    }
+
+    @Test
+    fun testDeviceContactsImport() {
+        val contacts = listOf(
+            DeviceContact("c_101", "Kwesi Arthur", "+233 24 555 1111", "kwesi.arthur@gh.com"),
+            DeviceContact("c_102", "Yaa Asantewaa", "+233 20 666 2222", "yaa.asantewaa@gh.com")
+        )
+
+        val count = repository.importContactsAsMembers(contacts, UserRole.STUDENT, "Maritime Cadets")
+        assertEquals(2, count)
+        assertTrue(repository.members.value.any { it.name == "Kwesi Arthur" })
+        assertTrue(repository.members.value.any { it.name == "Yaa Asantewaa" })
+    }
+
+    @Test
+    fun testTemaPlastClockInAndOut() {
+        val temaOrg = repository.sampleOrganizations.find { it.name == "Tema Plast" }!!
+        repository.switchOrganization(temaOrg)
+
+        val worker = repository.members.value.first()
+        val punchIn = repository.clockInWorker(worker.id, "Morning Extrusion Shift")
+        assertNotNull(punchIn)
+        assertEquals("Active Shift", punchIn?.status)
+
+        val updatedWorker = repository.members.value.find { it.id == worker.id }
+        assertTrue(updatedWorker?.isClockedIn == true)
+
+        val punchOut = repository.clockOutWorker(worker.id)
+        assertNotNull(punchOut)
+        assertEquals("Completed Shift", punchOut?.status)
+        assertEquals(8.0f, punchOut?.hoursWorked)
+    }
+
+    @Test
+    fun testReportExportFormats() {
+        val csv = repository.exportReportAsCsv()
+        assertTrue(csv.contains("BonyVisuals ADT Tracker Attendance Register Export"))
+        assertTrue(csv.contains("Generated by Administrator: Bony Visuals"))
+
+        val json = repository.exportReportAsJson()
+        assertTrue(json.contains("\"administrator\": \"Bony Visuals\""))
+        assertTrue(json.contains("\"records\": ["))
+    }
+
+    @Test
+    fun testAppDestinationsIncludesIntroAndCoreModules() {
+        val destinations = com.example.ui.navigation.AppDestination.values().map { it.name }
+        assertTrue(destinations.contains("INTRO"))
+        assertTrue(destinations.contains("DASHBOARD"))
+        assertTrue(destinations.contains("SCANNER"))
+        assertTrue(destinations.contains("SCHOOL"))
+        assertTrue(destinations.contains("JOB"))
+        assertTrue(destinations.contains("MEMBERS"))
+        assertTrue(destinations.contains("BACKEND"))
+    }
+}
